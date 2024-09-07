@@ -1,0 +1,107 @@
+addEventListener('fetch', event => {
+  event.respondWith(handleRequest(event.request))
+})
+
+async function handleRequest(request) {
+  if (request.method === 'POST') {
+    return handlePostRequest(request)
+  } else {
+    return new Response(generateHTMLForm(), {
+      headers: { 'Content-Type': 'text/html' },
+    })
+  }
+}
+
+function generateHTMLForm(results = '') {
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Magnet Link Scraper</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+          }
+          textarea {
+            width: 100%;
+            height: 300px;
+            margin-top: 10px;
+          }
+          button {
+            margin-top: 10px;
+          }
+          .url-input {
+            margin-bottom: 10px;
+          }
+        </style>
+      </head>
+      <body>
+        <h1>Enter URLs to Scrape Magnet Links</h1>
+        <form id="scrapeForm" method="POST">
+          <div id="urlContainer">
+            <input type="text" class="url-input" name="url[]" style="width: 80%;" placeholder="Enter URL">
+          </div>
+          <button type="button" onclick="addUrlInput()">Add another URL</button>
+          <button type="submit">Scrape</button>
+        </form>
+        ${results ? `
+          <h2>Magnet Links:</h2>
+          <textarea id="resultArea" readonly>${results}</textarea>
+          <button onclick="copyToClipboard()">Copy to Clipboard</button>
+        ` : ''}
+        <script>
+          function addUrlInput() {
+            const urlContainer = document.getElementById('urlContainer')
+            const newInput = document.createElement('input')
+            newInput.type = 'text'
+            newInput.name = 'url[]'
+            newInput.className = 'url-input'
+            newInput.style = 'width: 80%;'
+            newInput.placeholder = 'Enter URL'
+            urlContainer.appendChild(newInput)
+          }
+
+          function copyToClipboard() {
+            const textarea = document.getElementById('resultArea')
+            textarea.select()
+            document.execCommand('copy')
+            alert('Magnet links copied to clipboard!')
+          }
+        </script>
+      </body>
+    </html>
+  `
+}
+
+async function handlePostRequest(request) {
+  const formData = await request.formData()
+  const urls = formData.getAll('url[]').filter(Boolean)
+  
+  let allMagnetLinks = []
+
+  for (const targetUrl of urls) {
+    if (!targetUrl) continue
+
+    try {
+      const response = await fetch(targetUrl, {
+        cf: { cacheEverything: false, cacheTtl: 0 }
+      })
+      const text = await response.text()
+
+      // 找到完整的磁力链接，包括 tracker 信息
+      const magnetLinks = [...text.matchAll(/magnet:\?xt=urn:btih:[a-zA-Z0-9]+(?:&[^\s<>"]*)*/g)].map(m => m[0])
+      allMagnetLinks.push(...magnetLinks)
+    } catch (error) {
+      allMagnetLinks.push('Error fetching the target URL or extracting magnet links.')
+    }
+  }
+
+  const results = allMagnetLinks.length > 0 ? allMagnetLinks.join('\n') : 'No magnet links found on the provided pages.'
+  
+  return new Response(generateHTMLForm(results), {
+    headers: { 'Content-Type': 'text/html' }
+  })
+}
